@@ -109,6 +109,7 @@ def match_jobs():
 
     # Fetch available jobs from MongoDB
     job_descriptions = list(jobs_collection.find())
+    job_descriptions = job_descriptions[:12]
     if not job_descriptions:
         return jsonify({'error': 'No jobs available'}), 404
 
