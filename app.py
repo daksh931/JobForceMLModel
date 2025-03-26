@@ -1,6 +1,6 @@
 import os
 from flask import Flask, request, jsonify
-from pymongo import MongoClient
+from pymongo import MongoClient, errors
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -15,12 +15,33 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Connecting to MongoDB
+# Load MongoDB URI from environment variables
 mongo_uri = os.getenv("MONGO_URI")
-client = MongoClient(mongo_uri)
-db = client["test"]  # Replace with your actual database name
-jobs_collection = db["jobs"]
-users_collection = db["users"]
+
+# MongoDB connection setup
+def connect_to_mongo():
+    try:
+        # Attempt to establish a connection to MongoDB
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)  # Timeout after 5 seconds
+        # Test the connection
+        client.admin.command('ping')  # A simple command to check if MongoDB is reachable
+        print("Connected to MongoDB successfully")
+        return client
+    except errors.ServerSelectionTimeoutError as err:
+        # If connection fails
+        print("Failed to connect to MongoDB:", err)
+        return None
+
+# Connect to MongoDB
+client = connect_to_mongo()
+if client:
+    db = client["test"]  # Replace with your actual database name
+    jobs_collection = db["jobs"]
+    users_collection = db["users"]
+else:
+    # Graceful exit if unable to connect
+    print("Exiting application due to MongoDB connection failure.")
+    exit(1)
 
 # Load spaCy model for skill extraction
 nlp = spacy.load("en_core_web_sm")
@@ -57,7 +78,7 @@ def matching(user_skills, job_descriptions):
 
 @app.route('/')
 def hello():
-    return {"Hello":"api deployed succesfully"}
+    return {"Hello":"api deployed successfully"}
 
 @app.route('/match-jobs', methods=['POST'])
 def match_jobs():
@@ -65,12 +86,19 @@ def match_jobs():
     data = request.json
     user_id = data.get('userId')
 
+    # Ensure userId is provided in the request
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+
     user = users_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
     # Get resume text from S3 URL
     resume_url = user.get('resumeUrl')
+    if not resume_url:
+        return jsonify({'error': 'User resume URL is missing'}), 400
+
     resume_text = extract_text_from_pdf(resume_url)
 
     if not resume_text:
@@ -81,8 +109,9 @@ def match_jobs():
 
     # Fetch available jobs from MongoDB
     job_descriptions = list(jobs_collection.find())
-    # job_descriptions = job_descriptions[:5]
-    # print(job_descriptions)
+    if not job_descriptions:
+        return jsonify({'error': 'No jobs available'}), 404
+
     # Match the user's skills with job descriptions
     recommended_jobs = matching(user_skills, job_descriptions)
 
@@ -90,14 +119,18 @@ def match_jobs():
 
 def extract_text_from_pdf(url):
     """Downloads a PDF from a URL and extracts text."""
-    response = requests.get(url)
-    if response.status_code == 200:
-        pdf_file = BytesIO(response.content)
-        text = ""
-        with pdfplumber.open(pdf_file) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text() + "\n"
-        return text.strip()
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raises HTTPError for bad responses
+        if response.status_code == 200:
+            pdf_file = BytesIO(response.content)
+            text = ""
+            with pdfplumber.open(pdf_file) as pdf:
+                for page in pdf.pages:
+                    text += page.extract_text() + "\n"
+            return text.strip()
+    except requests.exceptions.RequestException as err:
+        print(f"Error fetching PDF: {err}")
     return ""
 
 if __name__ == "__main__":
