@@ -55,6 +55,10 @@ def matching(user_skills, job_descriptions):
 
     return formatted_jobs
 
+@app.route('/')
+def hello():
+    return {"Hello":"api deployed succesfully"}
+
 @app.route('/match-jobs', methods=['POST'])
 def match_jobs():
     """Matches jobs for a given user ID."""
