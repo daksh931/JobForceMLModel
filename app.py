@@ -77,7 +77,7 @@ def match_jobs():
 
     # Fetch available jobs from MongoDB
     job_descriptions = list(jobs_collection.find())
-    job_descriptions = job_descriptions[:5]
+    # job_descriptions = job_descriptions[:5]
     # print(job_descriptions)
     # Match the user's skills with job descriptions
     recommended_jobs = matching(user_skills, job_descriptions)
@@ -94,7 +94,7 @@ def extract_text_from_pdf(url):
             for page in pdf.pages:
                 text += page.extract_text() + "\n"
         return text.strip()
-    return None
+    return ""
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=7860)
